@@ -4,9 +4,10 @@
   "version": "0.1.0",
   "description": "Minimal Electron browser for low-memory Linux devices (Pi Zero 2 W, armv7l, ~512 MB RAM)",
   "main": "src/main.js",
-  "homepage": "https://github.com/yourname/microbrowser",
+  "homepage": "https://github.com/xnohat/microbrowser",
   "author": {
-    "name": "microbrowser contributors"
+    "name": "microbrowser contributors",
+    "email": "noreply@github.com"
   },
   "license": "MIT",
   "scripts": {
@@ -14,15 +15,93 @@
     "build:armv7l": "electron-packager . microbrowser --platform=linux --arch=armv7l --out=dist --overwrite --icon=assets/icon.png --prune=true --asar --extra-resource=build/microbrowser.desktop --extra-resource=assets/icon.png",
     "build:x64": "electron-packager . microbrowser --platform=linux --arch=x64    --out=dist --overwrite --icon=assets/icon.png --prune=true --asar --extra-resource=build/microbrowser.desktop --extra-resource=assets/icon.png",
     "bundle:armv7l": "npm run build:armv7l && cp build/install.sh dist/microbrowser-linux-armv7l/install.sh && chmod +x dist/microbrowser-linux-armv7l/install.sh && tar -C dist -czf dist/microbrowser-armv7l.tar.gz microbrowser-linux-armv7l",
-    "bundle:x64": "npm run build:x64    && cp build/install.sh dist/microbrowser-linux-x64/install.sh    && chmod +x dist/microbrowser-linux-x64/install.sh    && tar -C dist -czf dist/microbrowser-x64.tar.gz    microbrowser-linux-x64"
+    "bundle:x64": "npm run build:x64    && cp build/install.sh dist/microbrowser-linux-x64/install.sh    && chmod +x dist/microbrowser-linux-x64/install.sh    && tar -C dist -czf dist/microbrowser-x64.tar.gz    microbrowser-linux-x64",
+    "dist:linux": "electron-builder --linux --x64 --arm64 --armv7l",
+    "dist:win": "electron-builder --win --x64 --arm64",
+    "dist:mac": "electron-builder --mac --x64 --arm64"
   },
   "devDependencies": {
     "@electron/packager": "^18.4.4",
-    "electron": "^27.3.11"
+    "electron": "^27.3.11",
+    "electron-builder": "^24.13.3"
   },
   "files": [
     "src/**/*",
     "assets/icon.png",
     "package.json"
-  ]
+  ],
+  "build": {
+    "appId": "com.microbrowser.app",
+    "productName": "microbrowser",
+    "copyright": "MIT",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/icon.png",
+      "package.json"
+    ],
+    "linux": {
+      "target": [
+        { "target": "deb",      "arch": ["x64", "arm64", "armv7l"] },
+        { "target": "rpm",      "arch": ["x64", "arm64", "armv7l"] },
+        { "target": "AppImage", "arch": ["x64", "arm64", "armv7l"] }
+      ],
+      "category": "Network",
+      "icon": "build/icon.png",
+      "synopsis": "Minimal Electron browser for low-memory Linux devices",
+      "description": "microbrowser is a tiny Chromium-based web browser tuned for low-RAM Linux devices like the Raspberry Pi Zero 2 W.",
+      "executableArgs": ["--no-sandbox"],
+      "desktop": {
+        "Name": "microbrowser",
+        "GenericName": "Web Browser",
+        "Comment": "Minimal web browser for low-memory Linux devices",
+        "Categories": "Network;WebBrowser;",
+        "MimeType": "text/html;text/xml;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;",
+        "StartupWMClass": "microbrowser",
+        "StartupNotify": "true"
+      }
+    },
+    "deb": {
+      "depends": ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libatspi2.0-0", "libsecret-1-0"],
+      "fpm": ["--after-install=build/linux-postinstall.sh"]
+    },
+    "rpm": {
+      "depends": ["gtk3", "libnotify", "nss", "libXScrnSaver", "libXtst", "xdg-utils", "at-spi2-core", "libsecret"],
+      "fpm": ["--after-install=build/linux-postinstall.sh"]
+    },
+    "appImage": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis",     "arch": ["x64", "arm64"] },
+        { "target": "portable", "arch": ["x64", "arm64"] }
+      ],
+      "icon": "build/icon.png",
+      "executableArgs": ["--no-sandbox"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] }
+      ],
+      "category": "public.app-category.utilities",
+      "icon": "build/icon.png",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
+  }
 }

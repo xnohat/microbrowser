@@ -1,0 +1,200 @@
+name: Release
+
+# Build microbrowser installers for Linux (deb/rpm/AppImage on x64, arm64,
+# armv7l), Windows (NSIS + portable, x64 & arm64), and macOS (dmg, x64 &
+# arm64). Triggered by pushing a tag like `v0.1.0` or via the Actions UI.
+#
+# Note on signing: we ship UNSIGNED builds. macOS users will need to
+# right-click → Open the first time (or run `xattr -dr com.apple.quarantine`);
+# Windows SmartScreen will warn until a code-signing cert is configured.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------- Linux: deb, rpm, AppImage for x64 / arm64 / armv7l ----------
+  linux:
+    name: Linux (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # One arch per runner so a single broken cross-build doesn't fail the
+        # whole release, and so artifacts stay small per job.
+        arch: [x64, arm64, armv7l]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Linux packaging tools
+        # rpm + fakeroot are needed to produce .rpm / .deb on ubuntu runners;
+        # imagemagick upscales the 256x256 icon to 512x512 (electron-builder
+        # warns below 512 for Linux icons).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm fakeroot imagemagick
+
+      - name: Prepare icon
+        run: |
+          mkdir -p build
+          convert assets/icon.png -resize 1024x1024 build/icon.png
+
+      - name: Install dependencies
+        # Don't use `npm ci` — the lockfile may not yet include
+        # electron-builder if a contributor edits package.json without
+        # regenerating it locally. `npm install` is forgiving here.
+        env:
+          NODE_ENV: development
+        run: npm install
+
+      - name: Build (${{ matrix.arch }})
+        env:
+          # electron-builder respects this to skip auto-publishing; we publish
+          # in the dedicated `release` job below using the collected artifacts.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --linux --${{ matrix.arch }} --publish never
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.AppImage
+          if-no-files-found: error
+
+  # ---------- Windows: NSIS installer + portable exe, x64 / arm64 ----------
+  windows:
+    name: Windows (${{ matrix.arch }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Prepare icon
+        # electron-builder generates an .ico from build/icon.png. 256x256 is
+        # the largest standard ico size so no upscaling needed here.
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          Copy-Item assets/icon.png build/icon.png -Force
+
+      - name: Install dependencies
+        env:
+          NODE_ENV: development
+        run: npm install
+
+      - name: Build (${{ matrix.arch }})
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --${{ matrix.arch }} --publish never
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}
+          path: |
+            dist/*.exe
+            dist/*.msi
+          if-no-files-found: error
+
+  # ---------- macOS: dmg for x64 (Intel) and arm64 (Apple Silicon) ----------
+  macos:
+    name: macOS (${{ matrix.arch }})
+    # macos-13 has Intel hardware (x64); macos-14 has Apple Silicon (arm64).
+    # We pin per-arch so each runner builds natively — cross-builds work but
+    # native is more reliable for the codesign/notary paths users may add.
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64,   runner: macos-13 }
+          - { arch: arm64, runner: macos-14 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Prepare icon
+        run: |
+          mkdir -p build
+          # macOS .icns generation needs >= 512x512 source.
+          if command -v magick >/dev/null 2>&1; then
+            magick assets/icon.png -resize 1024x1024 build/icon.png
+          else
+            brew install imagemagick
+            magick assets/icon.png -resize 1024x1024 build/icon.png
+          fi
+
+      - name: Install dependencies
+        env:
+          NODE_ENV: development
+        run: npm install
+
+      - name: Build (${{ matrix.arch }})
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Disable signing/notarization since we have no Apple Developer ID.
+          # Users will see a Gatekeeper warning; mitigation is documented in
+          # the README.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --mac --${{ matrix.arch }} --publish never
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: error
+
+  # ---------- Aggregate & publish GitHub Release ----------
+  release:
+    name: Publish GitHub Release
+    needs: [linux, windows, macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifact tree
+        # softprops/action-gh-release uploads files non-recursively, so move
+        # everything into one directory first.
+        run: |
+          mkdir -p release
+          find artifacts -type f \( \
+            -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
+            -o -name '*.exe' -o -name '*.msi' \
+            -o -name '*.dmg' -o -name '*.zip' \
+          \) -exec cp -v {} release/ \;
+          ls -la release/
+
+      - name: Create / update Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false

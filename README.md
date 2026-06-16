@@ -125,6 +125,30 @@ sudo zramctl --find --size 200M --algorithm lz4 | xargs -I{} sh -c \
 For persistence across reboots, create a systemd unit (see the Debian
 wiki entry on `zram`).
 
+## Pre-built installers (GitHub Releases)
+
+CI builds installers for every tag pushed (`v*`). See the
+[Releases page](https://github.com/xnohat/microbrowser/releases):
+
+| Platform | Architectures      | Formats                  |
+|----------|--------------------|--------------------------|
+| Linux    | x64, arm64, armv7l | `.deb`, `.rpm`, AppImage |
+| Windows  | x64, arm64         | NSIS `.exe`, portable    |
+| macOS    | x64, arm64         | `.dmg`                   |
+
+Builds are **unsigned**. On macOS, right-click → Open the first time
+(or `xattr -dr com.apple.quarantine /Applications/microbrowser.app`).
+On Windows, click "More info → Run anyway" on the SmartScreen prompt.
+
+To cut a release, push a tag:
+
+```sh
+git tag v0.1.0 && git push --tags
+```
+
+The `.github/workflows/release.yml` workflow builds all targets in
+parallel and attaches the artifacts to the GitHub Release.
+
 ## License
 
 MIT

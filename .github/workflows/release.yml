@@ -116,15 +116,15 @@ jobs:
   # ---------- macOS: dmg for x64 (Intel) and arm64 (Apple Silicon) ----------
   macos:
     name: macOS (${{ matrix.arch }})
-    # macos-13 has Intel hardware (x64); macos-14 has Apple Silicon (arm64).
-    # We pin per-arch so each runner builds natively — cross-builds work but
-    # native is more reliable for the codesign/notary paths users may add.
+    # macos-15-intel is the last remaining Intel runner (macos-13 was
+    # deprecated and the queue stalls indefinitely); macos-14 has Apple
+    # Silicon (arm64). We pin per-arch so each runner builds natively.
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { arch: x64,   runner: macos-13 }
+          - { arch: x64,   runner: macos-15-intel }
           - { arch: arm64, runner: macos-14 }
     steps:
       - uses: actions/checkout@v4

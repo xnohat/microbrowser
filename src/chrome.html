@@ -1,0 +1,915 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>microbrowser</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #1e1e1e; color: #ddd;
+    font: 12px/1.35 -apple-system, "DejaVu Sans", sans-serif; overflow: hidden;
+    user-select: none; height: 100%; }
+
+  /* Tab strip — fixed 28px height, scrolls horizontally if many tabs. */
+  #tabs { display: flex; align-items: flex-end; gap: 2px; height: 28px;
+    padding: 4px 4px 0 4px; box-sizing: border-box; background: #161616;
+    border-bottom: 1px solid #000; overflow-x: auto; overflow-y: hidden;
+    white-space: nowrap; }
+  #tabs::-webkit-scrollbar { height: 0; }
+  .tab { display: inline-flex; align-items: center; gap: 4px; height: 24px;
+    padding: 0 6px 0 10px; max-width: 180px; min-width: 70px;
+    background: #2a2a2a; border: 1px solid #3a3a3a; border-bottom: none;
+    border-radius: 5px 5px 0 0; cursor: pointer; font-size: 12px;
+    color: #bbb; flex-shrink: 0; }
+  .tab:hover { background: #353535; color: #ddd; }
+  .tab.active { background: #1e1e1e; color: #fff; border-color: #000; }
+  .tab-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; min-width: 0; }
+  .tab-close { background: transparent; border: none; color: #888;
+    height: 18px; min-width: 18px; padding: 0; border-radius: 3px;
+    font-size: 14px; line-height: 1; cursor: pointer; flex-shrink: 0; }
+  .tab-close:hover { background: #555; color: #fff; }
+  #tab-new { background: transparent; border: none; color: #ddd;
+    height: 24px; min-width: 26px; padding: 0; cursor: pointer;
+    font-size: 18px; line-height: 1; border-radius: 4px; flex-shrink: 0; }
+  #tab-new:hover { background: #2a2a2a; }
+
+  #bar { display: flex; align-items: center; gap: 4px; height: 40px;
+    padding: 0 6px; box-sizing: border-box; border-bottom: 1px solid #000;
+    position: relative; }
+  button { background: #2a2a2a; color: #ddd; border: 1px solid #3a3a3a;
+    height: 28px; min-width: 28px; padding: 0 8px; border-radius: 4px;
+    cursor: pointer; font-size: 14px; }
+  button:hover:not(:disabled) { background: #353535; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button.on { background: #4a8cff; border-color: #4a8cff; color: #fff; }
+  button.primary { background: #4a8cff; border-color: #4a8cff; color: #fff; }
+  button.primary:hover { background: #2b6fe0; }
+  button.danger { background: #5a2a2a; border-color: #7a3a3a; color: #fdd; }
+  button.danger:hover { background: #7a3a3a; }
+  input[type="text"], input[type="url"], select {
+    background: #111; color: #eee; border: 1px solid #3a3a3a;
+    height: 28px; padding: 0 10px; border-radius: 4px; font-size: 13px;
+    outline: none; box-sizing: border-box; }
+  input:focus, select:focus { border-color: #4a8cff; }
+
+  #url { flex: 1; height: 28px; }
+  #spin { width: 12px; height: 12px; border: 2px solid #444;
+    border-top-color: #4a8cff; border-radius: 50%; display: none; }
+  #spin.on { display: inline-block; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #zoomlbl { color: #888; padding: 0 4px; min-width: 32px; text-align: center;
+    cursor: pointer; }
+
+  /* Find bar — sits IN the toolbar strip so it isn't hidden by the page view */
+  #findbar { display: none; position: absolute; top: 6px; right: 10px;
+    background: #2a2a2a; border: 1px solid #444; border-radius: 4px;
+    padding: 4px; gap: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.6); }
+  #findbar.on { display: flex; align-items: center; }
+  #findq { background: #111; color: #eee; border: 1px solid #3a3a3a;
+    height: 24px; padding: 0 8px; border-radius: 3px; font-size: 12px;
+    outline: none; width: 200px; }
+  #findcount { color: #888; padding: 0 6px; min-width: 50px; font-size: 11px; }
+
+  /* URL autosuggest dropdown */
+  #sugg { display: none; position: absolute; top: 68px; background: #232323;
+    border: 1px solid #555; border-radius: 4px; padding: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.7); z-index: 50;
+    max-height: 320px; overflow-y: auto; box-sizing: border-box; }
+  #sugg.on { display: block; }
+  .sg { display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+    border-radius: 3px; cursor: pointer; box-sizing: border-box;
+    width: 100%; }
+  .sg:hover, .sg.sel { background: #3a3a3a; }
+  .sg-main { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+  .sg-title { color: #ffffff; font-size: 13px; line-height: 1.3;
+    font-weight: 500; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .sg-url { color: #9ec3ff; font-size: 12px; line-height: 1.3;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sg-del { flex: 0 0 auto; background: transparent; border: none;
+    color: #bbb; font-size: 16px; cursor: pointer; padding: 0 6px;
+    line-height: 1; }
+  .sg-del:hover { color: #ff6464; }
+
+  /* Bookmarks dropdown */
+  #bmmenu { display: none; position: absolute; top: 68px; left: 10px;
+    background: #2a2a2a; border: 1px solid #444; border-radius: 4px;
+    padding: 4px; min-width: 260px; max-height: 360px; overflow-y: auto;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.6); z-index: 10; }
+  #bmmenu.on { display: block; }
+  .bm { display: flex; align-items: center; gap: 4px; padding: 4px;
+    border-radius: 3px; cursor: pointer; }
+  .bm:hover { background: #353535; }
+  .bm-title { flex: 1; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; font-size: 12px; }
+  .bm-del { background: transparent; border: none; color: #888;
+    font-size: 14px; cursor: pointer; padding: 0 4px; }
+  .bm-del:hover { color: #f88; }
+  .bm-empty { color: #666; padding: 8px; font-style: italic; }
+
+  /* Toast — anchored in the toolbar strip so it shows over the BrowserView */
+  #toast { display: none; position: absolute; top: 34px; right: 12px;
+    background: #333; border: 1px solid #555; color: #ddd; padding: 8px 12px;
+    border-radius: 4px; font-size: 12px; max-width: 320px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.6); z-index: 20; }
+  #toast.on { display: block; }
+
+  /* Restore-tabs prompt — centered modal shown once on launch if a previous
+     session had open tabs. Covers the whole window so it can't be missed. */
+  #restore { display: none; position: absolute; inset: 68px 0 0 0;
+    background: rgba(0,0,0,0.55); z-index: 40;
+    align-items: center; justify-content: center; }
+  #restore.on { display: flex; }
+  #restore-card { background: #2a2a2a; border: 1px solid #444;
+    border-radius: 8px; padding: 22px 26px; min-width: 340px; max-width: 460px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.7); }
+  #restore-card h3 { margin: 0 0 8px 0; font-size: 16px; color: #fff;
+    font-weight: 500; }
+  #restore-card p { margin: 0 0 18px 0; color: #bbb; font-size: 13px;
+    line-height: 1.5; }
+  #restore-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* Permission prompt — shown directly below the URL bar like Chrome */
+  #perm { display: none; position: absolute; top: 68px; left: 50%;
+    transform: translateX(-50%); background: #2a2a2a; border: 1px solid #444;
+    border-radius: 6px; padding: 14px 16px; min-width: 340px; max-width: 480px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.7); z-index: 30; font-size: 13px; }
+  #perm.on { display: block; }
+  #perm-msg { margin-bottom: 10px; line-height: 1.4; }
+  #perm-msg b { color: #fff; }
+  #perm-actions { display: flex; gap: 6px; align-items: center; }
+  #perm-actions label { font-size: 11px; color: #aaa; margin-right: auto;
+    display: flex; align-items: center; gap: 4px; }
+  #perm-actions input[type=checkbox] { accent-color: #4a8cff; }
+
+  /* Settings modal — full-window overlay */
+  #settings { display: none; position: absolute; inset: 68px 0 0 0;
+    background: #1e1e1e; z-index: 25; overflow-y: auto;
+    padding: 24px 32px; box-sizing: border-box; }
+  #settings.on { display: block; }
+  #settings h2 { margin: 0 0 4px 0; font-size: 22px; color: #fff;
+    font-weight: 500; }
+  #settings .sub { color: #888; margin-bottom: 20px; font-size: 12px; }
+  #settings section { background: #252525; border: 1px solid #333;
+    border-radius: 6px; padding: 16px 18px; margin-bottom: 14px;
+    max-width: 720px; }
+  #settings h3 { margin: 0 0 12px 0; font-size: 14px; color: #4a8cff;
+    font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+  .row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+  .row label { flex: 0 0 140px; color: #bbb; font-size: 13px; }
+  .row input[type=url], .row input[type=text] { flex: 1; max-width: 420px; }
+  .row .hint { color: #666; font-size: 11px; }
+  .perm-origin { border-top: 1px solid #333; padding: 10px 0; }
+  .perm-origin:first-child { border-top: none; padding-top: 0; }
+  .perm-origin-name { font-weight: 500; color: #ddd; margin-bottom: 6px;
+    display: flex; align-items: center; }
+  .perm-origin-name button { margin-left: auto; }
+  .perm-row { display: flex; align-items: center; gap: 8px; margin: 4px 0;
+    font-size: 12px; }
+  .perm-row .name { flex: 0 0 180px; color: #bbb; }
+  .perm-row select { height: 24px; font-size: 12px; padding: 0 6px; }
+  .empty { color: #666; font-style: italic; padding: 8px 0; }
+  #settings-close { position: absolute; top: 16px; right: 24px; font-size: 18px; }
+  .about-grid { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px;
+    font-family: monospace; font-size: 12px; }
+  .about-grid div:nth-child(odd) { color: #888; }
+</style>
+</head>
+<body>
+<div id="tabs">
+  <button id="tab-new" title="New tab (Ctrl+T)">+</button>
+</div>
+<div id="bar">
+  <button id="back" title="Back (Alt+←)">&larr;</button>
+  <button id="fwd"  title="Forward (Alt+→)">&rarr;</button>
+  <button id="rl"   title="Reload (Ctrl+R)">&#x21bb;</button>
+  <button id="home" title="Home"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M2 7L8 2l6 5v7a1 1 0 0 1-1 1h-3v-5H6v5H3a1 1 0 0 1-1-1z"/></svg></button>
+  <button id="bm"   title="Bookmarks">&#9734;</button>
+  <input id="url" type="text" spellcheck="false" autocomplete="off"
+         placeholder="Search or enter URL" />
+  <button id="go" title="Go (Enter)">&#10148;</button>
+  <span id="spin"></span>
+  <button id="star"  title="Bookmark this page (Ctrl+D)">&#9733;</button>
+  <button id="find"  title="Find in page (Ctrl+F)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></button>
+  <span id="zoomlbl" title="Reset zoom (Ctrl+0)">100%</span>
+  <button id="zout"  title="Zoom out (Ctrl+-)">&minus;</button>
+  <button id="zin"   title="Zoom in (Ctrl++)">+</button>
+  <button id="gc"    title="Free memory">mem</button>
+  <button id="settings-btn" title="Settings">&#9881;</button>
+</div>
+
+<div id="findbar">
+  <input id="findq" type="text" spellcheck="false" placeholder="Find" />
+  <span id="findcount">0/0</span>
+  <button id="findprev" title="Previous">&uarr;</button>
+  <button id="findnext" title="Next">&darr;</button>
+  <button id="findclose" title="Close">&times;</button>
+</div>
+
+<div id="bmmenu"></div>
+<div id="sugg"></div>
+
+<!-- Restore-tabs prompt -->
+<div id="restore">
+  <div id="restore-card">
+    <h3>Restore previous session?</h3>
+    <p id="restore-msg">You had tabs open last time. Restore them, or start fresh with a single blank tab?</p>
+    <div id="restore-actions">
+      <button id="restore-fresh">Start fresh</button>
+      <button id="restore-yes" class="primary">Restore tabs</button>
+    </div>
+  </div>
+</div>
+
+<!-- Permission prompt -->
+<div id="perm">
+  <div id="perm-msg"></div>
+  <div id="perm-actions">
+    <label><input type="checkbox" id="perm-remember" checked /> Remember</label>
+    <button id="perm-block">Block</button>
+    <button id="perm-allow" class="primary">Allow</button>
+  </div>
+</div>
+
+<!-- Settings page -->
+<div id="settings">
+  <button id="settings-close" title="Close (Esc)">&times;</button>
+  <h2>Settings</h2>
+  <div class="sub">Stored in <code>~/.config/microbrowser/settings.json</code></div>
+
+  <section>
+    <h3>General</h3>
+    <div class="row">
+      <label>Home page</label>
+      <input id="set-home" type="url" placeholder="https://..." />
+      <button id="set-home-save">Save</button>
+    </div>
+    <div class="row">
+      <label>Default zoom</label>
+      <select id="set-zoom">
+        <option value="0.75">75%</option>
+        <option value="0.9">90%</option>
+        <option value="1">100%</option>
+        <option value="1.1">110%</option>
+        <option value="1.25">125%</option>
+        <option value="1.5">150%</option>
+        <option value="2">200%</option>
+      </select>
+      <span class="hint">Applies to the current page now.</span>
+    </div>
+  </section>
+
+  <section>
+    <h3>Site Permissions</h3>
+    <div class="sub" style="margin-bottom: 12px;">
+      Camera, microphone, location, and notifications are asked per site.
+      Edit your choices here.
+    </div>
+    <div id="perm-list"></div>
+    <div class="row" style="margin-top: 12px;">
+      <button id="perm-clear-all" class="danger">Clear all permission decisions</button>
+    </div>
+  </section>
+
+  <section>
+    <h3>Privacy &amp; Storage</h3>
+    <div class="row">
+      <button id="clear-cache">Clear cache</button>
+      <span class="hint">Logins kept. Frees memory.</span>
+    </div>
+    <div class="row">
+      <button id="clear-cookies" class="danger">Clear cookies &amp; site data</button>
+      <span class="hint">Logs you out of every site.</span>
+    </div>
+    <div class="row">
+      <button id="clear-all" class="danger">Reset everything</button>
+      <span class="hint">Cookies, bookmarks, permissions, all gone.</span>
+    </div>
+  </section>
+
+  <section>
+    <h3>History</h3>
+    <div class="sub" style="margin-bottom: 12px;">
+      Recent pages appear as suggestions in the address bar. Delete entries you
+      don't want to see again.
+    </div>
+    <div id="hist-list" style="max-height: 280px; overflow-y: auto;"></div>
+    <div class="row" style="margin-top: 12px;">
+      <button id="hist-clear" class="danger">Clear all history</button>
+    </div>
+  </section>
+
+  <section>
+    <h3>About</h3>
+    <div id="about-info" class="about-grid"></div>
+  </section>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  const url = $('url'), back = $('back'), fwd = $('fwd'),
+        rl = $('rl'), home = $('home'), spin = $('spin'), go = $('go'),
+        bm = $('bm'), star = $('star'), find = $('find'),
+        zin = $('zin'), zout = $('zout'), zlbl = $('zoomlbl'), gcBtn = $('gc'),
+        findbar = $('findbar'), findq = $('findq'),
+        findcount = $('findcount'), findprev = $('findprev'),
+        findnext = $('findnext'), findclose = $('findclose'),
+        bmmenu = $('bmmenu'), toast = $('toast'),
+        sugg = $('sugg'),
+        permBox = $('perm'), permMsg = $('perm-msg'),
+        permRemember = $('perm-remember'),
+        permAllow = $('perm-allow'), permBlock = $('perm-block'),
+        settingsBtn = $('settings-btn'), settingsBox = $('settings'),
+        settingsClose = $('settings-close');
+
+  let editing = false, currentUrl = '', currentTitle = '';
+
+  // Refcount: while any chrome overlay is open we hide the BrowserView so the
+  // overlay (which lives in the toolbar webContents) is actually visible.
+  let overlayRefs = 0;
+  function acquireOverlay() {
+    if (++overlayRefs === 1) mb.viewVisible(false);
+  }
+  function releaseOverlay() {
+    if (overlayRefs > 0 && --overlayRefs === 0) mb.viewVisible(true);
+  }
+  // Toggle an element's `.on` class and update the refcount accordingly.
+  function setOverlay(el, on) {
+    const was = el.classList.contains('on');
+    if (on && !was)      { el.classList.add('on');    acquireOverlay(); }
+    else if (!on && was) { el.classList.remove('on'); releaseOverlay(); }
+  }
+
+  // Expand what the user typed into a full URL (mirrors normalizeURL in main.js)
+  // so we can show it immediately without waiting for a round-trip to main.
+  function displayUrl(input) {
+    const s = (input || '').trim();
+    if (!s || s === 'about:blank') return s;
+    if (/^[a-z]+:\/\//i.test(s)) return s;
+    if (/^[\w.-]+\.[a-z]{2,}(\/.*)?$/i.test(s)) return 'https://' + s;
+    return 'https://www.google.com/search?q=' + encodeURIComponent(s);
+  }
+
+  function navigate(input) {
+    const target = displayUrl(input);
+    url.value = target;          // update bar immediately — no waiting
+    spin.classList.add('on');    // start spinner immediately
+    mb.nav('go', input);
+    url.blur();
+  }
+
+  // ---- URL bar + history autosuggest ----
+  let suggItems = [], suggSel = -1, suggOpen = false;
+
+  // Local cache of history so suggestions are instant and don't race with
+  // focus/blur (async IPC was finishing AFTER blur had already closed it).
+  let historyCache = [];
+  async function loadHistoryCache() {
+    try { historyCache = await mb.history('list', { limit: 500 }) || []; }
+    catch (_) { historyCache = []; }
+  }
+  loadHistoryCache();
+  function searchHistoryLocal(q, limit) {
+    const s = (q || '').toLowerCase().trim();
+    if (!s) return historyCache.slice(0, limit);
+    const out = [];
+    for (const h of historyCache) {
+      if (h.url.toLowerCase().includes(s) ||
+          (h.title && h.title.toLowerCase().includes(s))) {
+        out.push(h);
+        if (out.length >= limit) break;
+      }
+    }
+    return out;
+  }
+
+  function positionSugg() {
+    const r = url.getBoundingClientRect();
+    // Make the dropdown at least 360px wide so titles/URLs aren't crushed.
+    const w = Math.max(r.width, 360);
+    sugg.style.left = Math.max(6, r.left) + 'px';
+    sugg.style.width = w + 'px';
+  }
+  function closeSugg() {
+    suggOpen = false; suggSel = -1; suggItems = [];
+    setOverlay(sugg, false);
+  }
+  function renderSugg() {
+    sugg.innerHTML = '';
+    if (!suggItems.length) { closeSugg(); return; }
+    suggItems.forEach((h, i) => {
+      const row = document.createElement('div');
+      row.setAttribute('style',
+        'display:flex;align-items:center;gap:8px;padding:8px 10px;' +
+        'border-bottom:1px solid #333;cursor:pointer;' +
+        'background:' + (i === suggSel ? '#3a3a3a' : 'transparent') + ';');
+      const main = document.createElement('div');
+      main.setAttribute('style',
+        'flex:1 1 auto;min-width:0;overflow:hidden;');
+      const t = document.createElement('div');
+      t.setAttribute('style',
+        'color:#ffffff;font-size:14px;font-weight:600;' +
+        'font-family:sans-serif;line-height:1.3;' +
+        'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;');
+      t.textContent = h.title || h.url;
+      const u = document.createElement('div');
+      u.setAttribute('style',
+        'color:#9ec3ff;font-size:12px;font-family:sans-serif;' +
+        'line-height:1.3;white-space:nowrap;' +
+        'overflow:hidden;text-overflow:ellipsis;');
+      u.textContent = h.url;
+      main.appendChild(t); main.appendChild(u);
+      const del = document.createElement('button');
+      del.setAttribute('style',
+        'flex:0 0 auto;background:transparent;border:none;' +
+        'color:#ddd;font-size:18px;cursor:pointer;padding:0 8px;' +
+        'line-height:1;');
+      del.textContent = '\u00d7';
+      del.title = 'Remove from history';
+      del.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); };
+      del.onclick = async (e) => {
+        e.stopPropagation();
+        await mb.history('delete', { url: h.url });
+        historyCache = historyCache.filter((x) => x.url !== h.url);
+        refreshSugg(url.value);
+      };
+      // mousedown (not click) — click fires after blur and would dismiss the box.
+      row.onmousedown = (e) => {
+        if (e.target === del) return;
+        e.preventDefault();
+        navigate(h.url);
+      };
+      row.appendChild(main); row.appendChild(del);
+      sugg.appendChild(row);
+    });
+    positionSugg();
+    setOverlay(sugg, true);
+    suggOpen = true;
+  }
+  function refreshSugg(q) {
+    suggItems = searchHistoryLocal(q, 8);
+    suggSel = -1;
+    renderSugg();
+  }
+
+  url.addEventListener('focus', () => { editing = true; url.select(); refreshSugg(url.value); });
+  url.addEventListener('blur',  () => { editing = false; setTimeout(closeSugg, 120); });
+  url.addEventListener('input', () => refreshSugg(url.value));
+  url.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' && suggItems.length) {
+      e.preventDefault();
+      suggSel = (suggSel + 1) % suggItems.length;
+      renderSugg();
+    } else if (e.key === 'ArrowUp' && suggItems.length) {
+      e.preventDefault();
+      suggSel = (suggSel - 1 + suggItems.length) % suggItems.length;
+      renderSugg();
+    } else if (e.key === 'Delete' && suggSel >= 0 && suggItems[suggSel]) {
+      // Shift+Delete in Chrome — here Delete alone works too.
+      e.preventDefault();
+      const target = suggItems[suggSel].url;
+      historyCache = historyCache.filter((x) => x.url !== target);
+      refreshSugg(url.value);
+      mb.history('delete', { url: target });
+    } else if (e.key === 'Enter') {
+      if (suggSel >= 0 && suggItems[suggSel]) navigate(suggItems[suggSel].url);
+      else navigate(url.value);
+      closeSugg();
+    } else if (e.key === 'Escape') {
+      if (suggOpen) closeSugg();
+      else { url.value = currentUrl; url.blur(); }
+    }
+  });
+  window.addEventListener('resize', () => { if (suggOpen) positionSugg(); });
+
+  back.onclick = () => mb.nav('back');
+  fwd.onclick  = () => mb.nav('forward');
+  // The reload button doubles as stop while a page is loading (Chrome
+  // convention). `loading` is tracked from `nav-state` below.
+  let isLoading = false;
+  function setLoadingUI(loading) {
+    isLoading = loading;
+    spin.classList.toggle('on', loading);
+    rl.innerHTML = loading ? '\u2715' : '\u21bb';
+    rl.title = loading ? 'Stop (Esc)' : 'Reload (Ctrl+R)';
+  }
+  rl.onclick = () => {
+    if (isLoading) { mb.nav('stop'); setLoadingUI(false); }
+    else           { mb.nav('reload'); }
+  };
+  home.onclick = () => mb.nav('home');
+  go.onclick   = () => navigate(url.value);
+  gcBtn.onclick = () => { mb.nav('gc'); showToast('Memory freed'); };
+
+  // ---- Zoom ----
+  zin.onclick = () => mb.zoom('in');
+  zout.onclick = () => mb.zoom('out');
+  zlbl.onclick = () => mb.zoom('reset');
+  mb.onZoom((z) => { zlbl.textContent = Math.round(z * 100) + '%'; });
+
+  // ---- Find in page ----
+  let findVisible = false, findToken = '';
+  // Find bar lives in the toolbar strip (CSS top:6px), so it doesn't need to
+  // hide the BrowserView — the user must see search highlights in the page.
+  function openFind()  { findVisible = true;  findbar.classList.add('on');  findq.focus(); findq.select(); }
+  function closeFind() { findVisible = false; findbar.classList.remove('on'); findcount.textContent = '0/0'; mb.findStop(); }
+  function doFind(forward = true) {
+    const q = findq.value;
+    if (!q) { findcount.textContent = '0/0'; mb.findStop(); return; }
+    mb.findStart(q, { forward, findNext: !!findToken });
+    findToken = q;
+  }
+  find.onclick = () => findVisible ? closeFind() : openFind();
+  findclose.onclick = closeFind;
+  findnext.onclick = () => doFind(true);
+  findprev.onclick = () => doFind(false);
+  findq.addEventListener('input', () => { findToken = ''; doFind(true); });
+  findq.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { doFind(!e.shiftKey); e.preventDefault(); }
+    else if (e.key === 'Escape') closeFind();
+  });
+  mb.onFindResult((r) => {
+    if (r && r.matches != null)
+      findcount.textContent = (r.activeMatchOrdinal || 0) + '/' + r.matches;
+  });
+  mb.onToggleFind(() => findVisible ? closeFind() : openFind());
+
+  // ---- Bookmarks ----
+  let bmVisible = false;
+  async function refreshBookmarks() {
+    const list = await mb.bookmarks('list');
+    bmmenu.innerHTML = '';
+    if (!list.length) {
+      const e = document.createElement('div');
+      e.className = 'bm-empty';
+      e.textContent = 'No bookmarks yet. Press Ctrl+D to add one.';
+      bmmenu.appendChild(e); return;
+    }
+    list.forEach((b) => {
+      const row = document.createElement('div');
+      row.className = 'bm';
+      const t = document.createElement('span');
+      t.className = 'bm-title'; t.textContent = b.title || b.url;
+      t.title = b.url;
+      t.onclick = () => { mb.nav('go', b.url); closeBmMenu(); };
+      const d = document.createElement('button');
+      d.className = 'bm-del'; d.textContent = '×'; d.title = 'Remove';
+      d.onclick = (e) => { e.stopPropagation(); mb.bookmarks('remove', { url: b.url }).then(refreshBookmarks); };
+      row.appendChild(t); row.appendChild(d);
+      bmmenu.appendChild(row);
+    });
+  }
+  function openBmMenu()  { bmVisible = true;  setOverlay(bmmenu, true);  refreshBookmarks(); }
+  function closeBmMenu() { bmVisible = false; setOverlay(bmmenu, false); }
+  bm.onclick = () => bmVisible ? closeBmMenu() : openBmMenu();
+  document.addEventListener('click', (e) => {
+    if (bmVisible && !bmmenu.contains(e.target) && e.target !== bm) closeBmMenu();
+  });
+
+  async function toggleCurrentBookmark() {
+    const list = await mb.bookmarks('list');
+    const exists = list.some((b) => b.url === currentUrl);
+    if (exists) { await mb.bookmarks('remove', { url: currentUrl }); showToast('Bookmark removed'); }
+    else { await mb.bookmarks('add', { url: currentUrl, title: currentTitle }); showToast('Bookmarked'); }
+    refreshStar(await mb.bookmarks('list'));
+  }
+  star.onclick = toggleCurrentBookmark;
+  mb.onToggleBookmark(toggleCurrentBookmark);
+  function refreshStar(list) { star.classList.toggle('on', list.some((b) => b.url === currentUrl)); }
+
+  // ---- Downloads + toast ----
+  let toastTimer = null;
+  function showToast(msg) {
+    toast.textContent = msg; toast.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('on'), 3000);
+  }
+  mb.onDownload((info) => {
+    if (info.state === 'completed') showToast('Downloaded ' + info.name);
+    else showToast('Download ' + info.state + ': ' + info.name);
+  });
+
+  // ---- Permission prompt ----
+  const PERM_LABELS = {
+    media: 'use your camera and/or microphone',
+    geolocation: 'know your location',
+    notifications: 'show desktop notifications',
+    'persistent-storage': 'store data on your device',
+    'display-capture': 'share your screen',
+    'screen-wake-lock': 'keep your screen awake',
+    openExternal: 'open another application',
+  };
+  let activePromptId = null;
+  function describePerm(perm) {
+    return PERM_LABELS[perm] || ('use the ' + perm + ' permission');
+  }
+  function showPermPrompt(p) {
+    activePromptId = p.id;
+    permMsg.innerHTML = '<b>' + escapeHtml(p.origin) + '</b> wants to ' +
+                        escapeHtml(describePerm(p.perm)) + '.';
+    permRemember.checked = true;
+    setOverlay(permBox, true);
+  }
+  function closePermPrompt(allow) {
+    if (activePromptId == null) return;
+    mb.permission('respond', {
+      id: activePromptId, allow, remember: permRemember.checked,
+    });
+    activePromptId = null;
+    setOverlay(permBox, false);
+  }
+  permAllow.onclick = () => closePermPrompt(true);
+  permBlock.onclick = () => closePermPrompt(false);
+  mb.onPermissionPrompt(showPermPrompt);
+
+  // ---- Settings page ----
+  const PERM_DISPLAY = {
+    media: 'Camera / microphone',
+    geolocation: 'Location',
+    notifications: 'Notifications',
+    'persistent-storage': 'Persistent storage',
+    'display-capture': 'Screen sharing',
+    'screen-wake-lock': 'Wake lock',
+    openExternal: 'Open external apps',
+  };
+  async function openSettings() {
+    // Show overlay FIRST so the user gets immediate feedback even if a refresh
+    // call throws; the rest of the panel populates in the background.
+    setOverlay(settingsBox, true);
+    try {
+      const s = await mb.settings('get');
+      $('set-home').value = s.homeUrl || '';
+      $('set-zoom').value = String(s.zoom || 1);
+      await refreshPermissionList();
+      await refreshHistoryList();
+      await refreshAbout();
+    } catch (err) { console.error('settings refresh failed', err); }
+  }
+  function closeSettings() { setOverlay(settingsBox, false); }
+  settingsBtn.onclick = () => settingsBox.classList.contains('on') ? closeSettings() : openSettings();
+  settingsClose.onclick = closeSettings;
+
+  $('set-home-save').onclick = async () => {
+    const v = $('set-home').value.trim();
+    await mb.settings('setHome', v);
+    showToast('Home page saved');
+  };
+  $('set-zoom').onchange = async (e) => {
+    const z = parseFloat(e.target.value);
+    // Apply by stepping toward target. Simpler: ipc 'reset' then 'in'/'out' loops.
+    // Direct approach: use the existing zoom IPC by adjusting in steps.
+    let cur = (await mb.zoom('reset'));
+    while (Math.abs(cur - z) > 0.005) {
+      cur = await mb.zoom(cur < z ? 'in' : 'out');
+      if (cur === 0.5 || cur === 2.5) break;
+    }
+  };
+
+  async function refreshPermissionList() {
+    const list = await mb.permission('list');
+    const box = $('perm-list');
+    box.innerHTML = '';
+    const origins = Object.keys(list).sort();
+    if (!origins.length) {
+      const e = document.createElement('div');
+      e.className = 'empty';
+      e.textContent = 'No site permissions saved yet.';
+      box.appendChild(e);
+      return;
+    }
+    origins.forEach((origin) => {
+      const card = document.createElement('div');
+      card.className = 'perm-origin';
+      const head = document.createElement('div');
+      head.className = 'perm-origin-name';
+      head.innerHTML = escapeHtml(origin);
+      const clr = document.createElement('button');
+      clr.textContent = 'Clear site';
+      clr.onclick = async () => {
+        await mb.permission('clear', { origin });
+        refreshPermissionList();
+      };
+      head.appendChild(clr);
+      card.appendChild(head);
+
+      Object.entries(list[origin]).forEach(([perm, value]) => {
+        const r = document.createElement('div');
+        r.className = 'perm-row';
+        const n = document.createElement('span');
+        n.className = 'name';
+        n.textContent = PERM_DISPLAY[perm] || perm;
+        const sel = document.createElement('select');
+        ['allow', 'deny'].forEach((v) => {
+          const o = document.createElement('option');
+          o.value = v; o.textContent = v === 'allow' ? 'Allow' : 'Block';
+          if (v === value) o.selected = true;
+          sel.appendChild(o);
+        });
+        sel.onchange = async () => {
+          await mb.permission('set', { origin, perm, value: sel.value });
+        };
+        const rm = document.createElement('button');
+        rm.textContent = 'Ask again';
+        rm.onclick = async () => {
+          await mb.permission('set', { origin, perm, value: null });
+          refreshPermissionList();
+        };
+        r.appendChild(n); r.appendChild(sel); r.appendChild(rm);
+        card.appendChild(r);
+      });
+
+      box.appendChild(card);
+    });
+  }
+  $('perm-clear-all').onclick = async () => {
+    if (!confirm('Forget all saved permission decisions?')) return;
+    await mb.permission('clear');
+    refreshPermissionList();
+    showToast('All permission decisions cleared');
+  };
+
+  async function refreshHistoryList() {
+    const list = await mb.history('list', { limit: 200 });
+    const box = $('hist-list');
+    box.innerHTML = '';
+    if (!list.length) {
+      const e = document.createElement('div');
+      e.className = 'empty';
+      e.textContent = 'No history yet.';
+      box.appendChild(e);
+      return;
+    }
+    list.forEach((h) => {
+      const row = document.createElement('div');
+      row.className = 'sg';
+      const main = document.createElement('div');
+      main.className = 'sg-main';
+      const t = document.createElement('div');
+      t.className = 'sg-title'; t.textContent = h.title || h.url;
+      const u = document.createElement('div');
+      u.className = 'sg-url';   u.textContent = h.url;
+      main.appendChild(t); main.appendChild(u);
+      main.onclick = () => { mb.nav('go', h.url); closeSettings(); };
+      const del = document.createElement('button');
+      del.className = 'sg-del'; del.textContent = '×';
+      del.title = 'Remove';
+      del.onclick = async (e) => {
+        e.stopPropagation();
+        await mb.history('delete', { url: h.url });
+        historyCache = historyCache.filter((x) => x.url !== h.url);
+        refreshHistoryList();
+      };
+      row.appendChild(main); row.appendChild(del);
+      box.appendChild(row);
+    });
+  }
+  $('hist-clear').onclick = async () => {
+    if (!confirm('Clear all browsing history?')) return;
+    await mb.history('clear');
+    historyCache = [];
+    refreshHistoryList();
+    showToast('History cleared');
+  };
+
+  $('clear-cache').onclick = async () => {
+    await mb.clearData('cache'); showToast('Cache cleared');
+  };
+  $('clear-cookies').onclick = async () => {
+    if (!confirm('Clear all cookies and site data? You will be logged out everywhere.')) return;
+    await mb.clearData('cookies'); showToast('Cookies and site data cleared');
+  };
+  $('clear-all').onclick = async () => {
+    if (!confirm('Reset everything? Cookies, bookmarks, permissions — all gone.')) return;
+    await mb.clearData('all');
+    historyCache = [];
+    refreshPermissionList(); refreshBookmarks(); refreshHistoryList();
+    showToast('Everything reset');
+  };
+
+  async function refreshAbout() {
+    const a = await mb.about();
+    const fields = [
+      ['App', a.app + ' ' + (a.version || '')],
+      ['Electron', a.electron],
+      ['Chromium', a.chrome],
+      ['Node.js', a.node],
+      ['Platform', a.platform + ' / ' + a.arch],
+    ];
+    const box = $('about-info'); box.innerHTML = '';
+    fields.forEach(([k, v]) => {
+      const a1 = document.createElement('div'); a1.textContent = k;
+      const a2 = document.createElement('div'); a2.textContent = v || '';
+      box.appendChild(a1); box.appendChild(a2);
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  // ---- Nav state ----
+  // Mirror new visits into the local cache so suggestions stay fresh without
+  // a round-trip to main on every keystroke.
+  function pushHistoryCache(url, title) {
+    if (!url || url === 'about:blank') return;
+    if (/^(data|chrome|file|javascript):/i.test(url)) return;
+    historyCache = historyCache.filter((h) => h.url !== url);
+    historyCache.unshift({ url, title: title || '', t: Date.now() });
+    if (historyCache.length > 500) historyCache.length = 500;
+  }
+
+  mb.onNavState((s) => {
+    pushHistoryCache(s.url, s.title);
+    currentUrl = s.url; currentTitle = s.title || '';
+    if (!editing) url.value = s.url;
+    if (s.url === 'about:blank' && !editing) { url.focus(); url.select(); }
+    back.disabled = !s.canGoBack;
+    fwd.disabled  = !s.canGoForward;
+    setLoadingUI(!!s.loading);
+    if (s.title) document.title = s.title + ' — microbrowser';
+    if (s.zoom)  zlbl.textContent = Math.round(s.zoom * 100) + '%';
+    mb.bookmarks('list').then(refreshStar);
+  });
+
+  // ---- Tabs ----
+  // Tab strip is a dumb projection of main-process state. We never store tab
+  // contents here — main owns the one live BrowserView and the cold snapshots
+  // on disk. UI just renders { id, url, title } and posts switch/new/close.
+  const tabsEl = $('tabs');
+  const tabNewBtn = $('tab-new');
+  let tabsState = { tabs: [], activeTabId: null };
+
+  function renderTabs() {
+    // Remove all tab nodes (keep the + button), then re-append.
+    const existing = tabsEl.querySelectorAll('.tab');
+    existing.forEach((n) => n.remove());
+    const frag = document.createDocumentFragment();
+    tabsState.tabs.forEach((t) => {
+      const el = document.createElement('div');
+      el.className = 'tab' + (t.id === tabsState.activeTabId ? ' active' : '');
+      el.title = t.url || '';
+      const title = document.createElement('span');
+      title.className = 'tab-title';
+      title.textContent = t.title || t.url || 'New tab';
+      const close = document.createElement('button');
+      close.className = 'tab-close';
+      close.textContent = '\u00d7';
+      close.title = 'Close tab (Ctrl+W)';
+      close.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); };
+      close.onclick = (e) => { e.stopPropagation(); mb.tabs('close', { id: t.id }); };
+      // Middle-click also closes (browser convention).
+      el.onmousedown = (e) => {
+        if (e.button === 1) { e.preventDefault(); mb.tabs('close', { id: t.id }); }
+      };
+      el.onclick = () => {
+        if (t.id !== tabsState.activeTabId) mb.tabs('switch', { id: t.id });
+      };
+      el.appendChild(title);
+      el.appendChild(close);
+      frag.appendChild(el);
+    });
+    tabsEl.insertBefore(frag, tabNewBtn);
+  }
+  tabNewBtn.onclick = () => mb.tabs('new', {});
+  mb.onTabsState((s) => { tabsState = s || tabsState; renderTabs(); });
+  // Initial pull in case the broadcast arrived before the listener attached.
+  mb.tabs('list').then((s) => { if (s) { tabsState = s; renderTabs(); } });
+
+  // ---- Restore-previous-session prompt ----
+  // On launch, main holds the saved tab list until the user decides. We ask,
+  // show the modal if there's something to restore, then ack with the choice.
+  const restoreBox = $('restore');
+  const restoreMsg = $('restore-msg');
+  function answerRestore(choice) {
+    setOverlay(restoreBox, false);
+    mb.tabs('restore', { choice });
+  }
+  $('restore-yes').onclick   = () => answerRestore('yes');
+  $('restore-fresh').onclick = () => answerRestore('no');
+  mb.tabs('pendingRestore').then((info) => {
+    if (!info) return;
+    const n = info.count | 0;
+    restoreMsg.textContent =
+      'You had ' + n + ' tab' + (n === 1 ? '' : 's') +
+      ' open last time. Restore ' + (n === 1 ? 'it' : 'them') +
+      ', or start fresh with a single blank tab?';
+    setOverlay(restoreBox, true);
+  });
+
+  // ---- Shortcuts ----
+  mb.onFocusUrl(() => { url.focus(); url.select(); });
+  mb.onEscape(() => {
+    if (findVisible) closeFind();
+    else if (bmVisible) closeBmMenu();
+    else if (settingsBox.classList.contains('on')) closeSettings();
+    else if (isLoading) mb.nav('stop');
+  });
+
+  // Initial zoom
+  mb.zoom('reset').then((z) => { zlbl.textContent = Math.round(z * 100) + '%'; });
+</script>
+</body>
+</html>

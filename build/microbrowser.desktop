@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=microbrowser
+GenericName=Web Browser
+Comment=Minimal web browser for low-memory Linux devices
+Exec=microbrowser %U
+Icon=microbrowser
+Terminal=false
+Categories=Network;WebBrowser;
+MimeType=text/html;text/xml;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
+StartupWMClass=microbrowser
+StartupNotify=true

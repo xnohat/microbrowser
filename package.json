@@ -1,0 +1,28 @@
+{
+  "name": "microbrowser",
+  "productName": "microbrowser",
+  "version": "0.1.0",
+  "description": "Minimal Electron browser for low-memory Linux devices (Pi Zero 2 W, armv7l, ~512 MB RAM)",
+  "main": "src/main.js",
+  "homepage": "https://github.com/yourname/microbrowser",
+  "author": {
+    "name": "microbrowser contributors"
+  },
+  "license": "MIT",
+  "scripts": {
+    "start": "electron . --no-sandbox",
+    "build:armv7l": "electron-packager . microbrowser --platform=linux --arch=armv7l --out=dist --overwrite --icon=assets/icon.png --prune=true --asar --extra-resource=build/microbrowser.desktop --extra-resource=assets/icon.png",
+    "build:x64": "electron-packager . microbrowser --platform=linux --arch=x64    --out=dist --overwrite --icon=assets/icon.png --prune=true --asar --extra-resource=build/microbrowser.desktop --extra-resource=assets/icon.png",
+    "bundle:armv7l": "npm run build:armv7l && cp build/install.sh dist/microbrowser-linux-armv7l/install.sh && chmod +x dist/microbrowser-linux-armv7l/install.sh && tar -C dist -czf dist/microbrowser-armv7l.tar.gz microbrowser-linux-armv7l",
+    "bundle:x64": "npm run build:x64    && cp build/install.sh dist/microbrowser-linux-x64/install.sh    && chmod +x dist/microbrowser-linux-x64/install.sh    && tar -C dist -czf dist/microbrowser-x64.tar.gz    microbrowser-linux-x64"
+  },
+  "devDependencies": {
+    "@electron/packager": "^18.4.4",
+    "electron": "^27.3.11"
+  },
+  "files": [
+    "src/**/*",
+    "assets/icon.png",
+    "package.json"
+  ]
+}

@@ -821,11 +821,20 @@
     if (historyCache.length > 500) historyCache.length = 500;
   }
 
+  let prevNavUrl = null;
   mb.onNavState((s) => {
     pushHistoryCache(s.url, s.title);
+    const wasUrl = prevNavUrl;
+    prevNavUrl = s.url;
     currentUrl = s.url; currentTitle = s.title || '';
     if (!editing) url.value = s.url;
-    if (s.url === 'about:blank' && !editing) { url.focus(); url.select(); }
+    // Only auto-focus when we *transition into* about:blank (new/empty tab).
+    // Without this guard, a transient about:blank nav-state during a load
+    // would re-focus the URL bar right after the user pressed Enter, leaving
+    // it stuck showing 'about:blank'.
+    if (s.url === 'about:blank' && wasUrl !== 'about:blank' && !editing) {
+      url.focus(); url.select();
+    }
     back.disabled = !s.canGoBack;
     fwd.disabled  = !s.canGoForward;
     setLoadingUI(!!s.loading);

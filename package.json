@@ -53,7 +53,6 @@
       "icon": "build/icon.png",
       "synopsis": "Minimal Electron browser for low-memory Linux devices",
       "description": "microbrowser is a tiny Chromium-based web browser tuned for low-RAM Linux devices like the Raspberry Pi Zero 2 W.",
-      "executableArgs": ["--no-sandbox"],
       "desktop": {
         "Name": "microbrowser",
         "GenericName": "Web Browser",
@@ -80,8 +79,7 @@
         { "target": "nsis",     "arch": ["x64", "arm64"] },
         { "target": "portable", "arch": ["x64", "arm64"] }
       ],
-      "icon": "build/icon.png",
-      "executableArgs": ["--no-sandbox"]
+      "icon": "build/icon.png"
     },
     "nsis": {
       "oneClick": false,

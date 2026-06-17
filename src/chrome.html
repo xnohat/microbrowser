@@ -172,6 +172,30 @@
   .about-grid { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px;
     font-family: monospace; font-size: 12px; }
   .about-grid div:nth-child(odd) { color: #888; }
+
+  /* Status bar — pinned to bottom. The BrowserView reserves STATUS_HEIGHT=22
+     above it (see main.js). We make the box 4px taller and let the top 4px
+     sit BEHIND the BrowserView so any subpixel rounding between the view's
+     bottom edge and the bar's top edge can't show a 1-2px gap of window
+     background. align-items + padding-top keep the text vertically centered
+     inside the visible 22px slice. */
+  #status { position: fixed; left: 0; right: 0; bottom: 0; height: 26px;
+    padding: 4px 8px 0 8px;
+    background: #161616; display: flex;
+    align-items: center; gap: 12px; font-size: 11px;
+    color: #aaa; box-sizing: border-box; white-space: nowrap; z-index: 6;
+    font-family: monospace; }
+  /* min-width:0 lets flexbox actually shrink #st-file when there's not enough
+     room; without it the element refuses to shrink below content width and
+     pushes #st-mem off the right edge. */
+  #st-file { flex: 1 1 0; min-width: 0; overflow: hidden;
+    text-overflow: clip; white-space: nowrap; direction: ltr; }
+  #st-err { color: #ff7878; overflow: hidden; text-overflow: ellipsis;
+    max-width: 30%; flex: 0 1 auto; }
+  #st-pct { color: #4a8cff; min-width: 36px; text-align: right;
+    flex: 0 0 auto; }
+  #st-mem { color: #888; min-width: 150px; text-align: right;
+    flex: 0 0 auto; }
 </style>
 </head>
 <body>
@@ -271,6 +295,39 @@
   </section>
 
   <section>
+    <h3>URL Blocklist</h3>
+    <div class="sub" style="margin-bottom: 12px;">
+      Cancel matching requests before they start. Useful for long-poll /
+      comet endpoints (e.g. Facebook chat sockets) that pin Chromium's
+      per-host connection limit and stall the page.
+      Pattern can be a plain substring or a JavaScript regex.
+    </div>
+    <div class="row">
+      <input id="bl-pattern" type="text" spellcheck="false"
+             placeholder="e.g. /ajax/bz   or   ^https://.*\.facebook\.com/ajax/qm/" />
+      <label style="flex:0 0 auto;color:#bbb;font-size:12px;">
+        <input type="checkbox" id="bl-regex" /> regex
+      </label>
+      <button id="bl-add" class="primary">Add rule</button>
+    </div>
+    <div id="bl-err" style="color:#ff7878;font-size:11px;margin:4px 0 0 0;display:none;"></div>
+
+    <div style="margin-top:14px;color:#888;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">Your rules</div>
+    <div id="bl-rules" style="margin-top:6px;"></div>
+
+    <div style="margin-top:14px;color:#888;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">Built-in (always on)</div>
+    <div id="bl-seed" style="margin-top:6px;color:#888;font-family:monospace;font-size:11px;"></div>
+
+    <div style="margin-top:14px;color:#888;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">
+      Auto-learned (hung &gt; 60s on a previous load)
+    </div>
+    <div id="bl-learned" style="margin-top:6px;max-height:180px;overflow-y:auto;"></div>
+    <div class="row" style="margin-top:10px;">
+      <button id="bl-clear-learned" class="danger">Clear auto-learned</button>
+    </div>
+  </section>
+
+  <section>
     <h3>Privacy &amp; Storage</h3>
     <div class="row">
       <button id="clear-cache">Clear cache</button>
@@ -305,6 +362,13 @@
 </div>
 
 <div id="toast"></div>
+
+<div id="status">
+  <span id="st-file" title=""></span>
+  <span id="st-err"></span>
+  <span id="st-pct"></span>
+  <span id="st-mem"></span>
+</div>
 
 <script>
   const $ = (id) => document.getElementById(id);
@@ -643,6 +707,7 @@
       $('set-home').value = s.homeUrl || '';
       $('set-zoom').value = String(s.zoom || 1);
       await refreshPermissionList();
+      await refreshBlocklist();
       await refreshHistoryList();
       await refreshAbout();
     } catch (err) { console.error('settings refresh failed', err); }
@@ -728,6 +793,118 @@
     await mb.permission('clear');
     refreshPermissionList();
     showToast('All permission decisions cleared');
+  };
+
+  // ---- URL blocklist UI ----
+  async function refreshBlocklist() {
+    const data = await mb.blocklist('list');
+    if (!data) return;
+
+    const rulesBox = $('bl-rules');
+    rulesBox.innerHTML = '';
+    if (!data.rules.length) {
+      const e = document.createElement('div');
+      e.className = 'empty';
+      e.textContent = 'No custom rules yet.';
+      rulesBox.appendChild(e);
+    } else {
+      data.rules.forEach((rule) => {
+        const row = document.createElement('div');
+        row.setAttribute('style',
+          'display:flex;align-items:center;gap:8px;padding:6px 8px;' +
+          'border-bottom:1px solid #333;font-family:monospace;font-size:12px;');
+        const tag = document.createElement('span');
+        tag.setAttribute('style',
+          'flex:0 0 auto;font-size:10px;padding:1px 6px;border-radius:3px;' +
+          'background:' + (rule.r ? '#4a8cff' : '#3a3a3a') + ';color:#fff;');
+        tag.textContent = rule.r ? 'REGEX' : 'TEXT';
+        const text = document.createElement('span');
+        text.setAttribute('style',
+          'flex:1 1 auto;min-width:0;overflow:hidden;' +
+          'text-overflow:ellipsis;white-space:nowrap;color:#ddd;');
+        text.textContent = rule.p;
+        text.title = rule.p;
+        const del = document.createElement('button');
+        del.textContent = 'Remove';
+        del.onclick = async () => {
+          await mb.blocklist('remove', { p: rule.p, r: rule.r });
+          refreshBlocklist();
+        };
+        row.appendChild(tag); row.appendChild(text); row.appendChild(del);
+        rulesBox.appendChild(row);
+      });
+    }
+
+    const seedBox = $('bl-seed');
+    seedBox.innerHTML = '';
+    data.seed.forEach((s) => {
+      const r = document.createElement('div');
+      r.setAttribute('style', 'padding:2px 0;');
+      r.textContent = s;
+      seedBox.appendChild(r);
+    });
+
+    const learnedBox = $('bl-learned');
+    learnedBox.innerHTML = '';
+    if (!data.learned.length) {
+      const e = document.createElement('div');
+      e.className = 'empty';
+      e.textContent = 'Nothing auto-learned yet.';
+      learnedBox.appendChild(e);
+    } else {
+      data.learned.forEach((key) => {
+        const row = document.createElement('div');
+        row.setAttribute('style',
+          'display:flex;align-items:center;gap:8px;padding:4px 8px;' +
+          'font-family:monospace;font-size:11px;color:#bbb;');
+        const text = document.createElement('span');
+        text.setAttribute('style',
+          'flex:1 1 auto;min-width:0;overflow:hidden;' +
+          'text-overflow:ellipsis;white-space:nowrap;');
+        text.textContent = key;
+        text.title = key;
+        const del = document.createElement('button');
+        del.textContent = '×';
+        del.title = 'Forget this entry';
+        del.setAttribute('style',
+          'background:transparent;border:none;color:#888;' +
+          'font-size:14px;cursor:pointer;padding:0 4px;');
+        del.onmouseover = () => del.style.color = '#f88';
+        del.onmouseout  = () => del.style.color = '#888';
+        del.onclick = async () => {
+          await mb.blocklist('removeLearned', { key });
+          refreshBlocklist();
+        };
+        row.appendChild(text); row.appendChild(del);
+        learnedBox.appendChild(row);
+      });
+    }
+  }
+  $('bl-add').onclick = async () => {
+    const p = $('bl-pattern').value.trim();
+    const r = $('bl-regex').checked;
+    const err = $('bl-err');
+    err.style.display = 'none'; err.textContent = '';
+    if (!p) { err.textContent = 'Pattern is empty.'; err.style.display = 'block'; return; }
+    const res = await mb.blocklist('add', { p, r });
+    if (!res || !res.ok) {
+      err.textContent = (res && res.error) ? ('Invalid pattern: ' + res.error) : 'Failed to add rule.';
+      err.style.display = 'block';
+      return;
+    }
+    $('bl-pattern').value = '';
+    $('bl-regex').checked = false;
+    refreshBlocklist();
+    showToast(res.dupe ? 'Rule already exists' : 'Rule added');
+  };
+  $('bl-pattern').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); $('bl-add').click(); }
+  });
+  $('bl-clear-learned').onclick = async () => {
+    if (!confirm('Clear all auto-learned slow URLs?')) return;
+    await mb.blocklist('clearLearned');
+    refreshBlocklist();
+    showToast('Auto-learned list cleared');
   };
 
   async function refreshHistoryList() {
@@ -919,6 +1096,26 @@
 
   // Initial zoom
   mb.zoom('reset').then((z) => { zlbl.textContent = Math.round(z * 100) + '%'; });
+
+  // ---- Status bar ----
+  const stFile = $('st-file'), stErr = $('st-err'),
+        stPct = $('st-pct'), stMem = $('st-mem');
+  function fmtMB(bytes) {
+    return Math.round(bytes / (1024 * 1024)) + 'M';
+  }
+  mb.onStatusState((s) => {
+    if (!s) return;
+    stFile.textContent = s.url || '';
+    stFile.title = s.url || '';
+    stErr.textContent = s.error || '';
+    stPct.textContent = s.loading ? (s.percent + '%') : (s.percent === 100 ? 'done' : '');
+    if (s.mem) {
+      const used = s.mem.sysTotal - s.mem.sysFree;
+      stMem.textContent =
+        'app ' + fmtMB(s.mem.appBytes) +
+        ' · sys ' + fmtMB(used) + '/' + fmtMB(s.mem.sysTotal);
+    }
+  });
 </script>
 </body>
 </html>

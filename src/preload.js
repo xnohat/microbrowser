@@ -23,6 +23,9 @@ contextBridge.exposeInMainWorld('mb', {
   // History
   history: (action, data) => ipcRenderer.invoke('history', action, data),
 
+  // URL blocklist (cancel-at-start + auto-learned slow URLs)
+  blocklist: (action, data) => ipcRenderer.invoke('blocklist', action, data),
+
   // Permissions
   permission: (action, data) => ipcRenderer.invoke('permission', action, data),
   onPermissionPrompt: (cb) => ipcRenderer.on('permission-prompt', (_e, p) => cb(p)),
@@ -32,6 +35,9 @@ contextBridge.exposeInMainWorld('mb', {
 
   // Navigation state stream
   onNavState: (cb) => ipcRenderer.on('nav-state', (_e, s) => cb(s)),
+
+  // Status bar stream (current resource, percent, error, memory)
+  onStatusState: (cb) => ipcRenderer.on('status-state', (_e, s) => cb(s)),
 
   // Tabs
   tabs: (action, data) => ipcRenderer.invoke('tabs', action, data),
